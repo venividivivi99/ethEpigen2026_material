@@ -1,0 +1,72 @@
+---
+title: "assignment"
+output: html_document
+date: "2026-03-03"
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(AnnotationHub) 
+  library(ensembldb)     
+  library(GenomicRanges) 
+  library(epiwraps) 
+  library(dplyr)
+  library(ggplot2)
+  library(scales)
+})
+```
+
+```{r}
+aH <- AnnotationHub()
+mouse1 <- query(aH, c("Mus Musculus", "EnsDb", "GRCm38", "102"))
+mouse1
+```
+```{r}
+mouse2<- query(aH, c("Mus Musculus", "dna_sm", "2bit", "GRCm38"))
+mouse2
+```
+
+```{r}
+dros_mel<- query(aH, c("Drosophila", "dna_sm", "2bit", "BDGP6"))
+dros_mel
+```
+
+
+```{r}
+db_mouse<- mouse1[[1]]
+mouse_genes<- genes(db_mouse)
+pcg_mouse<- mouse_genes[mouse_genes$gene_biotype== "protein_coding"]
+
+length(pcg_mouse)
+length(unique(pcg_mouse$gene_id))
+length(unique(pcg_mouse$gene_name))
+```
+
+```{r}
+exons_by_tx <- exonsBy(db_mouse, by = "tx", filter = GeneBiotypeFilter("protein_coding"))
+
+tx_lengths <- sum(width(exons_by_tx))
+```
+
+```{r}
+tx_df <- data.frame(
+  spliced_length = as.numeric(tx_lengths)
+)
+
+ggplot(tx_df, aes(x = spliced_length)) +
+  geom_histogram(
+    bins = 80,
+    color = "coral4",
+    fill = "coral3",
+    alpha = 0.8
+  ) +
+  scale_x_log10(labels = comma) +
+  theme_minimal(base_size = 14) +
+  labs(
+    x = "Spliced transcript length [bp]",
+    y = "Number of transcripts",
+    title = "Distribution of Protein-Coding Transcript Lengths") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.title.position = "plot")
+```
