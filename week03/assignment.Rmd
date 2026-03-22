@@ -1,0 +1,104 @@
+---
+title: "assignment"
+output: html_document
+date: "2026-03-17"
+---
+```{r, eval=TRUE}
+suppressPackageStartupMessages({
+  library(AnnotationHub)
+  library(Rsubread)      # read alignment
+  library(rtracklayer)   # read/write genomic file formats
+  library(Biostrings)    # handling sequences
+  library(Rfastp)        # read QC/trimming
+  library(epiwraps)
+})
+aH <- AnnotationHub()
+```
+
+```{r}
+#Download of raw reads
+options(timeout=3600)
+
+dir.create("raw")
+download.file("https://www.encodeproject.org/files/ENCFF127RRR/@@download/ENCFF127RRR.fastq.gz", destfile= "raw/ENCFF127RR.fastq.gz", mode="wb")
+
+```
+
+```{r}
+#Reads and QC trimming
+dir.create("rfastp.trimmed")
+qc <- lapply(
+  X = c("raw/ENCFF127RR.fastq.gz"),
+  FUN = function(x) {
+    Rfastp::rfastp(
+      x,
+      thread = 4,
+      overrepresentationAnalysis = TRUE,
+      outputFastq = file.path(
+        "rfastp.trimmed",
+        gsub("\\.fastq\\.gz$", "", basename(x))
+      )
+    )
+  }
+)
+```
+
+```{r}
+#Alignment
+##Genome build
+aH <- AnnotationHub()
+genome <- aH[["AH49674"]]
+dir.create("BDGP6_genome")
+export(import.2bit(genome), "BDGP6_genome/genome.fasta.gz", compress=TRUE)
+
+##Building the Rsubread index
+Rsubread::buildindex("BDGP6_genome/rsubread", reference="BDGP6_genome/genome.fasta.gz")
+
+##Actual alignment with assignment raw reads
+
+dir.create("aligned")
+align.stats <- Rsubread::align(index="BDGP6_genome/rsubread", type="dna",
+                    readfile1=("rfastp.trimmed/ENCFF127RR_R1.fastq.gz"),
+        
+                               output_file=("aligned/ENCFF127RR.bam"),
+                               nthreads=6, sortReadsByCoordinates=TRUE)
+```
+
+
+```{r}
+#Peak calling
+dir.create("peaks")
+if(!require("MACSr",quietly=TRUE)) BiocManager::install("MACSr")
+library(MACSr)
+
+callpeak(tfile="aligned/ENCFF127RR.bam",
+         gsize="dm", outdir = "peaks", name = "ENCFF127RR")
+peaks <- rtracklayer::import("peaks/ENCFF127RR_peaks.narrowPeak")
+peaks <- rtracklayer::import("peaks/ENCFF127RR_peaks.narrowPeak", format="narrowPeak") # for ENCODE data
+peaks
+```
+
+```{r}
+#Peak calling
+peaks <- rtracklayer::import("peaks/ENCFF127RR_peaks.narrowPeak")
+peaks
+```
+
+```{r}
+#Reporting
+align.stats
+total_map_reads<- align.stats["Total_reads", "ENCFF127RR.bam"]
+
+##Number of mapped reads
+numb_map_reads<- align.stats["Mapped_reads", "ENCFF127RR.bam"]
+numb_map_reads
+
+
+##Percantage of mapped reads
+(numb_map_reads/total_map_reads)*100
+
+
+#Number of Peaks found
+length(peaks)
+
+```
