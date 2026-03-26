@@ -1,0 +1,96 @@
+---
+title: "assignment"
+output: html_document
+date: "2026-03-24"
+---
+
+```{r}
+library(GenomicRanges)
+library(SummarizedExperiment)
+library(edgeR) # differential gene expression using neg.bin stats
+library(epiwraps)
+library(ggplot2)
+library(sechm) # for plotting (features*samples) heatmaps
+library(SummarizedExperiment)
+```
+
+
+```{r }
+#Data Extraction and Modification
+##Download of the file
+options(timeout = 3600)
+dir.create("data")
+
+download.file("https://ethz-ins.org/content/mouse_mm38_hippocampus.peakCounts.SE.rds", destfile = "data/hippo_peaks.se.rds")
+
+```
+```{r}
+##Extract Peaks from Files
+data_hippo<- readRDS("data/hippo_peaks.se.rds")
+data_hippo$condition <- c("CTRL","CTRL","CTRL","CTRL","CTRL","CTRL","FSS","FSS","FSS","FSS","FSS","FSS")
+data_hippo$sex<- c("f","f","f","m", "m", "m", "f","f","f","m", "m", "m")
+
+head(data_hippo)
+```
+
+
+```{r}
+#Standard Differential Analysis
+##Comparing Forced Swim Stress vs. Control
+dds_condition <- edgeR::DGEList(assay(data_hippo), group= data_hippo$condition)
+dds_condition <- edgeR::calcNormFactors(dds_condition)
+dds_condition <- edgeR::estimateDisp(dds_condition)
+
+et_condition<- as.data.frame(topTags(exactTest(dds_condition), Inf))
+head(et_condition)
+ggplot(et_condition, aes(logFC, -log10(FDR))) + geom_point()
+```
+
+```{r}
+#Reporting of Condition Comparision
+##Select the 10 most significant regions
+###since topTags already sorts the regions by p.value, the 10 most significant regions are in rows 1-10
+top10_condition<- head(et_condition, 10)
+print(top10_condition)
+
+#Heatmap of the 10 most significant regions
+# top10_condition is a data.frame; extract its row names as a character vector
+# Fix NULL rownames so sechm can match features
+rownames(data_hippo) <- as.character(seq_len(nrow(data_hippo)))
+
+# Add normalized logCPM assay
+assay(data_hippo, "logcpm") <- log1p(cpm(dds_condition))
+
+# Plot top 10 most significant regions
+topRegions <- row.names(top10_condition)
+sechm(data_hippo, topRegions, gaps_at = "condition")
+```
+
+```{r}
+##Comparing Forced between sex
+dds_sex <- edgeR::DGEList(assay(data_hippo), group= data_hippo$sex)
+dds_sex <- edgeR::calcNormFactors(dds_sex)
+dds_sex <- edgeR::estimateDisp(dds_sex)
+
+et_sex<- as.data.frame(topTags(exactTest(dds_sex), Inf))
+head(et_sex)
+ggplot(et_sex, aes(logFC, -log10(FDR))) + geom_point()
+```
+
+```{r}
+#Reporting of Sex Differences
+top10_sex<- head(et_sex, 10)
+print(top10_sex)
+
+#Heatmap of the 10 most significant regions
+# top10_sex is a data.frame; extract its row names as a character vector
+# Fix NULL rownames so sechm can match features
+rownames(data_hippo) <- as.character(seq_len(nrow(data_hippo)))
+
+# Add normalized logCPM assay
+assay(data_hippo, "logcpm") <- log1p(cpm(dds_sex))
+
+# Plot top 10 most significant regions
+topRegions <- row.names(top10_sex)
+sechm(data_hippo, topRegions, gaps_at = "sex")
+```
