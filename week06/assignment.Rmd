@@ -1,0 +1,131 @@
+---
+title: "assignment"
+output: html_document
+date: "2026-04-01"
+---
+
+```{r }
+suppressPackageStartupMessages({
+  library(AnnotationHub)
+  library(GenomicRanges)
+  library(GenomeInfoDb)
+  library(ggplot2)
+  library(motifmatchr) 
+  library(Biostrings) 
+  library(MotifDb)
+  library(TFBSTools)
+  library(universalmotif)
+  library(PWMEnrich) 
+  library(GenomeInfoDb)
+  library(MotifDb)
+  library(universalmotif)
+  library(motifmatchr)
+  library(Rsamtools)
+})
+```
+
+```{r }
+#Download of File, TF CTFC was chosen for this Assignment
+download.file("https://www.encodeproject.org/files/ENCFF116ZIX/@@download/ENCFF116ZIX.bed.gz", "mus_CTCFT_lung_tissue.bed.gz")
+peaks<- rtracklayer::import("mus_CTCFT_lung_tissue.bed.gz", format="NarrowPeak")
+seqlevelsStyle(peaks) <- "Ensembl"  
+```
+
+```{r }
+#Load Genome Sequence
+ah <- AnnotationHub::AnnotationHub()
+query_results <- AnnotationHub::query(ah, c("Mus Musculus", "TwoBitFile"))
+query_results
+
+genome <- ah[["AH14005"]]
+genome_seqs <- import(genome)
+```
+
+```{r}
+#Extract the Motifs for CTCF out of the Database
+motifs <- query(MotifDb, c("CTCF"))
+names(motifs)
+
+##Choose one Motif
+motif <- motifs[["Hsapiens-HOCOMOCOv10-CTCFL_HUMAN.H10MO.A"]]
+motif
+
+###Visualization of Motif
+view_motifs(motifs[1:2])
+```
+
+
+#Report 1: Find proportion of all peaks containing a motif factor
+
+```{r}
+##Match Motif to Peaks
+###Conversion of Genome
+Biostrings::writeXStringSet(genome_seqs, "genome.fa")
+
+indexFa("genome.fa")                  
+fa <- FaFile("genome.fa") 
+
+###Conversion of Motif
+motif_converted <- convert_motifs(motif, class="TFBSTools-PWMatrix")
+
+###Adjusting Header Format to each other
+seqlevelsStyle(peaks) <- "UCSC"
+
+fa_seq <- as.character(seqnames(scanFaIndex(fa)))
+common <- intersect(seqlevels(peaks), fa_seq)
+peaks2 <- keepSeqlevels(peaks, common, pruning.mode = "coarse")
+peaks2 <- trim(peaks2)
+
+###Find the Motif Matches
+motif_matches <- motifmatchr::matchMotifs(
+  motif_converted,
+  subject = peaks2,
+  genome = fa,
+  out = "positions"
+)
+
+###Visualization of Motif Match Score Distribution
+match_score <- mcols(motif_matches[[1]])$score
+hist(match_score, breaks = 30)
+```
+
+
+
+```{r}
+##Proportion of Total Peaks having a Motif
+mm <- motif_matches[[1]]
+
+n_peaks <- length(peaks2)
+n_with_motif <- sum(overlapsAny(peaks2, mm))
+pct <- round(100 * n_with_motif / n_peaks, 1)
+
+cat(sprintf("Of the %d peaks, %d (%.1f%%) contain a motif.\n",
+            n_peaks, n_with_motif, pct))
+```
+
+
+#Report 2: Number of Instances in Whole Genome 
+
+```{r}
+## Scanning for Motifs across Chr1
+genome_chr1 <- genome_seqs["chr1"]
+motifs_in_genome <- motifmatchr::matchMotifs(
+  motif_converted, subject = genome_chr1, out = "positions"
+)[[1]]
+
+# Transform to GRanges
+names(motifs_in_genome) <- names(genome_chr1)
+motifs_in_genome <- as(motifs_in_genome, "GRanges")
+
+# Keep only Chr1 Peaks and harmonize Naming Style
+peaks_chr1 <- GenomeInfoDb::keepSeqlevels(peaks, "chr1", pruning.mode = "coarse")
+GenomeInfoDb::seqlevelsStyle(peaks_chr1) <- GenomeInfoDb::seqlevelsStyle(motifs_in_genome)
+
+# Count overlaps
+n_motif <- length(motifs_in_genome)
+n_overlap <- sum(IRanges::overlapsAny(motifs_in_genome, peaks_chr1))
+pct_overlap <- 100 * n_overlap / n_motif
+
+cat(sprintf("Of the %d motif instances, %d (%.2f%%) overlap a peak.\n",
+            n_motif, n_overlap, pct_overlap))
+```
