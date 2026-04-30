@@ -1,0 +1,124 @@
+---
+title: "assignment"
+output: html_document
+date: "2026-04-28"
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(epiwraps)
+  library(ggplot2)
+  library(AnnotationHub)
+  library(ensembldb)
+  library(edgeR)
+  library(rtracklayer)
+  library(BiocParallel)
+  library(bsseq)   
+  library(DMRcate)
+  library(GenomicRanges)
+  library(GenomeInfoDb)
+})
+```
+#SetUp of genomic data
+```{r, load bigwigs}
+#Load DMR ranges
+
+DNAme <- readRDS("comparison/DNAme.rds")
+```
+
+```{r, annotation}
+#Get Annotaion
+ah <- AnnotationHub()
+ensdb <- ah[["AH89211"]] # GRCm38
+```
+#Task 1
+```{r}
+#This code bit was not necessary in the end
+#Extract the genes
+##Only use chr 1
+chr1 <-  GRanges(seqnames=Rle(c("1")), 
+                 ranges = IRanges(1, end=195471971))
+
+genes_chr1 <- genes(ensdb, filter=GRangesFilter(chr1), columns=c("gene_name"))
+
+head(genes_chr1)
+```
+
+#Differential Methylation Testing
+```{r}
+#Extract the methylation data from the BSseq object from ESC's and astrocytes
+
+bs <- readRDS("ESC_astrocytes_BSseq.rds")
+## remove CpGs with 0 coverage
+bs <- bs[rowSums(assay(bs,"Cov")>0)==ncol(bs),]
+bs <- bs[seqnames(bs) == "chr1",]
+design <- model.matrix(~celltype, data=pData(bs)) 
+methdesign <- modelMatrixMeth(design)
+```
+
+```{r}
+genes <- readRDS("hg19_chr1_genes.rds")
+head(genes$symbol)  
+```
+
+```{r}
+#find the top 5 regions
+seqAnnot <- sequencing.annotate(bs, methdesign, all.cov=TRUE, coef="celltypeastrocytes")
+dmrcateRes <- dmrcate(seqAnnot, C=2, min.cpgs=5)
+dmrRanges <- extractRanges(dmrcateRes, genome="hg19")
+
+top5 <- dmrRanges[order(abs(dmrRanges$meandiff), decreasing=TRUE)][1:5]
+seqlevels(top5) <- "chr1"
+
+# For verfification and analysis
+as.character(seqnames(top5))  
+head(top5)
+```
+
+```{r}
+#Save relevant gene names in a vector
+gene_names <- c("CR1L", "CD46P1", "C1orf198", "RP11-115D7.3")
+dmr_genes <- genes[genes$symbol %in% gene_names]
+
+# Extract methylation
+metDMR <- bsseq::getMeth(bs, regions=dmr_genes, what="perRegion", type="raw")
+rownames(metDMR) <- dmr_genes$symbol
+colnames(metDMR) <- colnames(bs)
+
+print(metDMR)
+pheatmap(metDMR, name="DMR\nmethylation", show_rownames=TRUE, fontsize_row=8)
+
+```
+
+#Task 2
+##Unfortunately I was not able to run the code snce it would need SeInfo which is contained in the library(GenomeInfoDb), which is a library not compatible with my R version. I was not able to find any other solution or workarounds. SeqInfo what have been needed to read this .rds file with the ATAC data. AS a result I wrote the whole code in theory, however I was not able to test it.
+```{r}
+#download.file("https://www.ethz-ins.org/content/ATAC_AstroVsESC_subset.rds", destfile = "accessibility_data.rds")
+#atac <- readRDS("accessibility_data.rds")
+#dmrRanges_new<- readRDS("dmrRanges_new.rds")
+```
+
+```{r}
+# Find overlaps between DMRs and ATAC peaks
+#hits2 <- findOverlaps(dmrRanges_new, atac)
+
+# Extract matched pairs
+#dmr_matched <- dmrRanges_new[queryHits(hits2)]
+#atac_matched <- atac[subjectHits(hits2)]
+
+# dataframe with both signals
+#df <- data.frame(
+ # methylation_diff = dmr_matched$meandiff,      # from DMRcate
+ # atac_log2FC = atac_matched$log2FoldChange     # from ATAC - column name may differ!
+#)
+
+#Theoretical interpretation of the plot: if methylation decreases at in a region=accessibility should increase (meaning mean methylation difference is bigger) in these reagions than in others
+#ggplot(df, aes(x=methylation_diff, y=atac_log2FC)) +
+ # geom_point() +
+ # geom_smooth(method="lm") +
+ # geom_hline(yintercept=0, linetype="dashed") +
+ # geom_vline(xintercept=0, linetype="dashed") +
+ # labs(x="Mean methylation difference (astrocyte - ESC)",
+  #     y="ATAC log2 fold change (astrocyte vs ESC)",
+  #     title="Agreement between methylation and accessibility changes")
+```
