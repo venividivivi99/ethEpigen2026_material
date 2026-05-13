@@ -1,0 +1,166 @@
+---
+title: "assigmnent"
+output: html_document
+date: "2026-05-10"
+---
+Load necessary Libraries
+```{r}
+suppressPackageStartupMessages({
+  library(GenomicRanges)
+  library(epiwraps)
+  library(ggplot2)
+  library(rGREAT) 
+})
+
+```
+Download File
+```{r}
+options(timeout = 6000)
+download.file("https://ethz-ins.org/content/clustering_assignment.zip", "assignment_data.zip")
+unzip("assignment_data.zip")
+list.files()
+```
+Filter for high-confidence peaks
+```{r}
+tracks <- list.files(pattern="bw$")
+peaks <- list.files(pattern="bed$")
+peaks <- lapply(peaks, rtracklayer::import.bed)
+peaks <- lapply(peaks, FUN=function(x) x[x$score>800])
+regions <- reduce(unlist(GRangesList(peaks)))
+```
+Creating heatmaps for data overview
+```{r}
+ese_4 <- signal2Matrix(tracks, regions, extend=2000)
+plotEnrichedHeatmaps(ese_4)
+ese2 <- ese_4[1:1000,]
+plotEnrichedHeatmaps(ese_4, column_title_gp = gpar(fontsize = 8))
+plotEnrichedHeatmaps(ese2, cluster_rows = TRUE, show_row_dend = TRUE,
+                     column_title_gp = gpar(fontsize = 8))
+```
+Figure 1
+
+## Clustering
+###k=4
+
+```{r}
+set.seed(123)  # to ensure that it gives the same results everytime
+cl_4 <- clusterSignalMatrices(ese_4, k=4)
+table(cl_4)
+head(cl_4)
+length(cl_4)
+nrow(ese_4)
+
+# to make sure the cluster labels stay associated with the corresponding regions/rows
+# even if we manipulate the object, put them inside the rowData of the object:
+rowData(ese_4)$cluster <- cl_4
+head(rowData(ese_4))
+```
+
+Plotting the clusters with k=4:
+
+```{r}
+plotEnrichedHeatmaps(ese_4, row_split=rowData(ese_4)$cluster, 
+                     colors=c("white","darkred"))
+```
+Figure 2
+
+
+Adding colors:
+
+```{r}
+mycolors <- c("1"="red", "2"="blue", "3"="darkgreen", "4"="black")
+plotEnrichedHeatmaps(ese_4, row_split="cluster", mean_color=mycolors, colors=c("white","darkred"))
+```
+Figure 3
+
+Trying different numbers of clusters:
+
+
+```{r}
+cl2 <- clusterSignalMatrices(ese_4, k=2:10)
+ggplot(cl2$varExplained, aes(k, varExplained)) + geom_line()
+```
+Figure 5
+
+Since six clusters would explain over 75% of the variance we try k=6:
+## clustering
+
+```{r}
+ese_6 <- signal2Matrix(tracks, regions, extend=2000)
+set.seed(123)  # to ensure that it gives the same results everytime
+cl_6 <- clusterSignalMatrices(ese_6, k=6)
+table(cl_6)
+head(cl_6)
+length(cl_6)
+nrow(ese_6)
+
+
+rowData(ese_6)$cluster <- cl_6
+head(rowData(ese_6))
+```
+
+Plotting the clusters:
+
+```{r}
+plotEnrichedHeatmaps(ese_6, row_split=rowData(ese_6)$cluster, 
+                     colors=c("white","darkred"))
+```
+Figure 6
+
+Since in two cates two clusters (2 & 3 and 5 & 6) are very similar and no new functional insights can be gained from them, we keep working with four clusters.
+
+Plotting just the averages:
+
+```{r}
+d <- meltSignals(ese_4, splitBy=cl_4)
+ggplot(d, aes(position, mean, colour=sample)) + geom_line(size=1.2) + facet_wrap(~split)
+```
+Figure 7
+
+Clustering using relative signal instead:
+
+```{r}
+set.seed(123)
+cl_4 <- clusterSignalMatrices(ese_4, k=4, scaleRows = TRUE)
+d <- meltSignals(ese_4, splitBy=cl_4)
+ggplot(d, aes(position, mean, colour=sample)) + geom_line() + facet_wrap(~split)
+plotEnrichedHeatmaps(ese_4, row_split = cl_4, scale_rows = "global")
+```
+Figure 8
+
+## Interpration of Clustering
+
+The Interpretations were made based on Figures 2, 7 and 8. The cluster-identifiers in figure 2 and 8 are slightly differnt: Cluster 1 and 2 are inverted in Figure 8, compared to Figure 2. The identifiers refferred to in the text are as displayed in Figure 2.
+
+The clustering analysis revealed four distinct binding patterns across the three CREB family transcription factors. Cluster 1 shows moderate signal across all three CREB TFs with no enrichment in histone marks or other proteins, representing a common but relatively uniform binding pattern. Therefore, the genomic regions included in Cluster1 do not seem to have a major regulatory role driven by the CREB-protein family. Cluster 2 is characterized by strong co-occupancy of Creb1 and Creb3L1 with weaker Creb3 signal, suggesting a specific interaction between Creb1 and Creb3L1 at these sites (Creb3 might also interact with Creb1 and Creb3L, however it does not seem to be necessary for Creb1/Creb3L1 to fulfill their functional role). Cluster 3 is dominated by strong Creb3 signal with only minor to no contributions from Creb1 and Creb3L1, indicating that Creb3 acts more independently at these genomic regions. Cluster 4, a large cluster, displays strong signal across all three CREB TFs, suggesting cooperative co-occupancy at these sites; given the signal strength and similarity (best visible in Figure 8), these regions likely represent highly important regulatory elements where all three CREB family members work together. However, it is important to mention, that in cluster 4 Creb1 and Creb3L have a stronger signal than Creb1 (see Figure 7) indicating higher importance than binding of Creb3.
+
+## Enrichment analysis
+
+Find what's enriched in one cluster with respect to the others:
+
+```{r}
+# we first split the regions by cluster:
+split_regions <- split(rowRanges(ese_4), rowData(ese_4)$cluster)
+lengths(split_regions)
+
+res <- great(split_regions[["4"]], gene_sets="GO:BP", tss_source="mm10", 
+             background=regions, cores=2)
+bp <- getEnrichmentTables(res)
+head(bp)
+
+```
+
+
+We plot the top Biological Processes:
+
+```{r, fig.width=9, fig.height=6}
+ggplot(head(bp,15), aes(fold_enrichment, reorder(description, p_adjust), 
+                        size=observed_region_hits, color=-log10(p_adjust))) + 
+  geom_point() + scale_color_viridis_c()
+```
+
+Figure 9
+
+##Intepretation of Enrichment Analysis
+
+The enrichment analysis of cluster 4, the second largest cluster containing 714 out of 2269 total regions, reveals several noteworthy patterns. Across all GO terms, the mean TSS distances are large (96,000–296,000 bp), indicating that CREB transcription factors in this cluster predominantly bind distal regulatory elements rather than promoter-proximal regions, making confident gene-to-peak assignment inherently difficult. Despite the cluster's meaningful size providing reasonable statistical power, fold enrichments remain modest (1.17–2.05), and while raw p-values reach nominal significance (<0.05), none survive multiple testing correction, as confirmed by the uniformly similar color across all dots in the visualization (Figure 9, p_adjust ~0.88). Notably, neurogenesis shows the highest number of observed region hits (~125), yet its fold enrichment is only 1.17, meaning that while many regions are nominally linked to neurogenesis, this is barely above what would be expected by chance. Conversely, T-helper 1 cell cytokine production and CD4-positive T cell cytokine production display the highest fold enrichments (~2.0), but their very small dot sizes reveal that only very few regions actually overlap with these gene sets, making these enrichments unreliable. Overall, the combination of modest fold enrichments, large TSS distances, and non-significant adjusted p-values suggests that CREB binding sites in this cluster do not show strong or specific association with any particular biological process, possibly reflecting their role as broadly active distal regulatory elements controlling a diverse set of target genes.
