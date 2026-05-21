@@ -1,0 +1,123 @@
+---
+title: "assignment"
+output: html_document
+date: "2026-05-20"
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(GenomicRanges)
+  library(ensembldb)
+  library(InteractionSet)
+})
+```
+
+#Download of files, CTCF was chosen as 
+
+```{r}
+dest_dir <- path.expand("~/data")
+dir.create(dest_dir, showWarnings = FALSE, recursive = TRUE)
+
+download.file("https://www.encodeproject.org/files/ENCFF511KXS/@@download/ENCFF511KXS.bedpe.gz", "~/data/assignment_interaction_data.bedpe.gz")
+
+download.file("https://www.encodeproject.org/files/ENCFF024MZE/@@download/ENCFF024MZE.bed.gz","~/data/CHIP_seq_data.bed.gz")
+```
+
+#Loading of peaks
+```{r}
+peaks<- rtracklayer::import("~/data/CHIP_seq_data.bed.gz", format="NarrowPeak")
+seqlevelsStyle(peaks) <- "ensembl"  
+```
+
+#Assigning contact regions to two different GInteraction objects
+```{r}
+hic <- read.delim("~/data/assignment_interaction_data.bedpe.gz")
+head(hic)
+anchor1 <- GRanges(hic$chr1, IRanges(hic$X778459, hic$X779450))
+anchor2 <- GRanges(hic$chr1.1, IRanges(hic$X827522 , hic$X827523))
+gi <- GInteractions(anchor1, anchor2, observed=hic$observed)
+seqlevelsStyle(gi) <- "ensembl"
+gi
+```
+#resolution is limited to number of reads
+
+```{r}
+first(gi)
+second(gi)
+```
+
+##Linking of genomic interactions to TSS
+###Function to find overlapping TSS and assignment of corresponding gene name
+```{r}
+#' gi2targets: get distal element to TSS annotations from a GInteractions object
+#'
+#' @param gi a GInteractions object
+#' @param proms Either an EnsDb object, or a GRanges of promoters with the 
+#'   `gene_name` metadata column.
+#'
+#' @return A GRanges object
+gi2targets <- function(gi, proms, maxDist=0L){
+  stopifnot(is(gi, "GInteractions"))
+  if(is(proms, "GRanges")){
+    stopifnot(!is.null(proms$gene_name))
+    seqlevelsStyle(proms) <- "ensembl"
+    proms <- proms[proms$gene_name!=""]
+  }else if(is(proms, "EnsDb")){
+    # obtain the promoters
+    proms <- trim(suppressWarnings(promoters(
+      transcripts(ensdb, columns=c("gene_name")),
+      upstream=100,downstream=50)))
+    proms <- proms[proms$gene_name!=""]
+  }else{
+    stop("Unrecognized `proms` format")
+  }
+  seqlevelsStyle(gi) <- "ensembl"
+  
+  .doOneOv <- function(gr){
+    if(maxDist<=0L){
+      o <- as.data.frame(findOverlaps(gr, proms, minoverlap=abs(maxDist)))
+    }else{
+      o <- distanceToNearest(gr, proms)
+      o <- as.data.frame(o[which(mcols(o)$distance<=maxDist)])
+    }
+    o$gene <- proms$gene_name[o$subjectHits]
+    o <- o[!duplicated(o[,c("queryHits","gene")]),]
+    splitAsList(o$gene, o$queryHits)
+  }
+  
+  # find overlaps between each anchor and promoters
+  o1 <- .doOneOv(first(gi))
+  o2 <- .doOneOv(second(gi))
+  # merge anchors with an overlap in the mate anchor
+  hic2 <- c( first(gi)[as.numeric(names(o2))], second(gi)[as.numeric(names(o1))] )
+  # add target gene
+  hic2$gene <- c(o2,o1)
+  sort(hic2)
+}
+```
+
+##Assign promotor regions to obtained TSS sites
+```{r}
+download.file("https://ethz-ins.org/content/hgEns104.promoters.rds", "promoters.rds")
+proms <- readRDS("promoters.rds")
+```
+
+```{r}
+#gi2 <- gi2targets(gi, ensdb)
+gi2 <- gi2targets(gi, proms)
+gi2
+head(gi2)
+```
+
+```{r}
+# find overlaps
+o <- findOverlaps(peaks, gi2)
+head(o)
+gi2[6547]
+
+# add target genes to the peaks
+mcols(peaks)[from(o),"target"] <- gi2[to(o)]$gene
+mcols(peaks)$target <- CharacterList(mcols(peaks)$target)
+# look at the output
+peaks
+```
