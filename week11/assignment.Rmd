@@ -1,0 +1,52 @@
+---
+title: "assignment"
+subtitle: "Group: Epigenomic Impacts of Hypoxia in Glioblastoma (Nora, Sophie and Vivianne)"
+output: html_document
+date: "2026-05-27"
+authors: "Group: Epigenomic Impacts of Hypoxia in Glioblastoma (Nora, Sophie and Vivianne)"
+---
+
+
+# Project Idea
+In the region of tumor cells nutrient and oxygen supply is often very sparse. Since especially the glioblastoma is a very aggressive form of cancer, both immune cells and tumor cells have to adapt to this harsh environment. Interestingly myeloid cells in hypoxia state acquire a more immunosuppressive phenotype. Therefore we aim to compare a co-culture or microglia cells and macrophages in hypoxia to further investigate the DNA accessibility and histone modifications.
+
+
+# Data
+-ATACseq data (availble in .narrowPeak format, aligned but not yet annotated, Link: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSM8574829&format=file&file=GSM8574829%5FBV2%5Fctrl%5FN%5Fn1%2EnarrowPeak%2Egz)
+
+-CUT&RUN data (availble in .bw format, aligned, Link: https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM9058nnn/GSM9058447/suppl/GSM9058447%5FH3K27ac%5Fctrl%5FN%5Fn1%5FCPM%2Ebw)
+
+
+# Research Question
+How does co-culture hypoxia remodel the coordination between chromatin accessibility and active histone marking at gene promoters to drive functional pathway shifts in glioma-associated myeloid cells?
+
+Preliminary Hypothesis: We expect a positive correlation between ATACseq peaks and H3K27ac.
+
+# Methods and Analysis
+Compare changes in ATACseq and the H3K27ac data (visual,quantitative). Comaprision of findings with results from paper by Dzwigonska et al.
+
+## Differential Analysis
+(generalized linear models: 2 factors: hypoxia & co-culture)
+ATACseq -> differential accessible regions (visualize as heatmap)
+H3K27ac -> differential acetylated regions (visualize as heatmap) of promoter??
+-> get regions with differential accesibility (acetylation)
+
+## Enrichment Analysis
+-> GO (gene ontology) enrichment analysis on the regions.
+
+## Comparision of ATACseq and H3K27ac
+Possible Comparisons:
+	• Regions (promoter probably more interesting) -> assignement 8
+	• GO terms (venn diagram?)
+	• Myeloid markers (venn diagram)
+
+General:
+	- Analysis for 1 cell line
+	- 1 comparison e.g. Ctrl vs CC hypoxia
+
+# Questions
+-Should we split the regions depending on fragment size and compare the chromatin signals?
+
+-Can we reproduce the CUT&RUN Analysis with our knowledge about ChipSeq? (we only have bigwig files, a continuus signal analysis approach was used)
+
+
